@@ -31,7 +31,7 @@ def execute(env, policy, gamma=1.0, render=False):
             env.render()
 
         # use latest best action for current state
-        start, reward, done, _ = env.step(int(policy(start)))
+        start, reward, done, _ = env.step(int(policy[start]))
 
         # collect reward (with gamma penalties for moves)
         totalReward += (gamma ** stepIndex * reward)
@@ -133,7 +133,7 @@ if __name__ == '__main__':
     policy_score = evaluatePolicy(env, policy, gamma, n=1000)
 
     # time complexity
-    envTime = time.time()
+    endTime = time.time()
 
     print("Best policy score = %.2f." % policy_score)
     print("Time Duration: %.2f seconds" % (endTime - startTime))
