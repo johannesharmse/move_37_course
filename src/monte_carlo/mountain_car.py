@@ -8,7 +8,7 @@ import random
 # use mountaincar env
 env = gym.make('Taxi-v2')
 
-episodes = int(10e6)
+episodes = 50
 
 # states
 # S = [(row, col, passidx, destidx) for row in range(5) 
@@ -43,9 +43,9 @@ for i in range(1, episodes+1):
             break
 
     m.update_Q(ep)
-    m.epsilon = max((episodes-i)/eps, 0.1)
+    m.epsilon = max((episodes-i)/episodes, 0.1)
 
-    print("Final expected returns: {}".format(m.score(env, m.pi, n_samples=10000)))
+    print("Final expected returns: {}".format(m.score(env, m.pi, n_samples=1000)))
 
 
 
