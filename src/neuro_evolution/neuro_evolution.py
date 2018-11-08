@@ -4,7 +4,6 @@ import neat
 import gym
 
 n_generations = 1000
-env = 
 
 class Environment(object):
     def __init__(self, game, width=84, height=84):
