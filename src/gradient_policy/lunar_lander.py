@@ -21,7 +21,8 @@ def discount_and_normalize_rewards(episode_rewards):
     return discounted_episode_rewards
 
 
-def reinforce(env, max_episodes, render=False):
+def reinforce(env, state_size, action_size, 
+max_episodes, learning_rate, gamma, render=False):
     """Training"""
 
     ### POLICY ESTIMATOR ###
@@ -192,7 +193,8 @@ if __name__ == "__main__":
     # discount rate
     gamma = 0.95
 
-    
+    reinforce(env, state_size, action_size, 
+max_episodes, learning_rate, gamma, render=False)
 
 
     # sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
