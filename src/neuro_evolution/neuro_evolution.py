@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import neat
 import gym
+import warnings
 
 n_generations = 1000
 
@@ -53,6 +54,9 @@ class Agent(object):
 
     def reward_sum(self, new_reward):
         self.reward += new_reward
+
+    def reward_reset(self):
+        self.reward = 0.
 
     # def get_initial_states(self):
     #     state = self.env.reset()
@@ -106,12 +110,13 @@ class Agent(object):
     #     return random.choice(max_index_list)
 
 def eval_genomes(genomes, config):
-    
+
     ship = Agent(render=False)
 
     for genome_id, genome in genomes:
+        
         genome.fitness = 99999
-        input_len = 1
+        input_len = 4
         net = neat.nn.FeedForwardNetwork.create(genome, config)
         
         reward = 0.
@@ -122,6 +127,7 @@ def eval_genomes(genomes, config):
             if i == 0:
                 # print(ship.env.reset())
                 next_state = ship.env.reset()
+                ship.reward_reset()
             else:
                 next_state, next_reward, done, _ = ship.env.game.step(0)
                 reward += next_reward
