@@ -64,6 +64,17 @@ class PolicyEstimator():
             with tf.name_scope("train"):
                 train_opt = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
+        # tensorboard
+        # Setup TensorBoard Writer
+        writer = tf.summary.FileWriter("/tensorboard/pg/1")
+
+        ## Losses
+        tf.summary.scalar("Loss", loss)
+
+        ## Reward mean
+        tf.summary.scalar("Reward_mean", mean_reward_)
+
+        write_op = tf.summary.merge_all()
 
 if __name__ == "__main__":
     env = gym.make('LunarLander-v2')
@@ -79,7 +90,7 @@ if __name__ == "__main__":
     # discount rate
     gamma = 0.95
 
-
+    
 
 
     # sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
