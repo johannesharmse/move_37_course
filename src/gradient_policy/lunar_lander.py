@@ -68,15 +68,15 @@ max_episodes, learning_rate, gamma, render=False):
 
     # tensorboard
     # Setup TensorBoard Writer
-    writer = tf.summary.FileWriter("./tensorboard/pg/1")
+    # writer = tf.summary.FileWriter("./tensorboard/pg/1")
 
     ## Losses
-    tf.summary.scalar("Loss", loss)
+    # tf.summary.scalar("Loss", loss)
 
     ## Reward mean
-    tf.summary.scalar("Reward_mean", mean_reward_)
+    # tf.summary.scalar("Reward_mean", mean_reward_)
 
-    write_op = tf.summary.merge_all()
+    # write_op = tf.summary.merge_all()
 
 
     ### TRAINING ###
@@ -99,20 +99,19 @@ max_episodes, learning_rate, gamma, render=False):
             # Launch the game
             state = env.reset()
             
-            if render:
-                env.render()
-            
             while True:
                 
                 # Choose action a, remember WE'RE NOT IN A DETERMINISTIC ENVIRONMENT, WE'RE OUTPUT PROBABILITIES.
-                print(state)
                 action_probability_distribution = sess.run(action_distribution, feed_dict={input_: state.reshape([1,8])})
                 
                 action = np.random.choice(range(action_probability_distribution.shape[1]), p=action_probability_distribution.ravel())  # select action w.r.t the actions prob
 
+                if render:
+                    env.render()
+                
                 # Perform a
                 new_state, reward, done, info = env.step(action)
-
+                
                 # Store s, a, r
                 episode_states.append(state)
                             
@@ -124,25 +123,26 @@ max_episodes, learning_rate, gamma, render=False):
                 episode_actions.append(action_)
                 
                 episode_rewards.append(reward)
+
                 if done:
                     # Calculate sum reward
                     episode_rewards_sum = np.sum(episode_rewards)
                     
-                    allRewards.append(episode_rewards_sum)
+                    # allRewards.append(episode_rewards_sum)
                     
-                    total_rewards = np.sum(allRewards)
+                    # total_rewards = np.sum(allRewards)
                     
-                    # Mean reward
-                    mean_reward = np.divide(total_rewards, episode+1)
+                    # # Mean reward
+                    # mean_reward = np.divide(total_rewards, episode+1)
                     
                     
-                    maximumRewardRecorded = np.amax(allRewards)
+                    # maximumRewardRecorded = np.amax(allRewards)
                     
                     print("==========================================")
                     print("Episode: ", episode)
                     print("Reward: ", episode_rewards_sum)
-                    print("Mean Reward", mean_reward)
-                    print("Max reward so far: ", maximumRewardRecorded)
+                    # print("Mean Reward", mean_reward)
+                    # print("Max reward so far: ", maximumRewardRecorded)
                     
                     # Calculate discounted reward
                     discounted_episode_rewards = discount_and_normalize_rewards(episode_rewards)
@@ -155,16 +155,16 @@ max_episodes, learning_rate, gamma, render=False):
                     
     
                                                                     
-                    # Write TF Summaries
-                    summary = sess.run(write_op, feed_dict={input_: np.vstack(np.array(episode_states)),
-                                                                    actions: np.vstack(np.array(episode_actions)),
-                                                                    discounted_episode_rewards_: discounted_episode_rewards,
-                                                                        mean_reward_: mean_reward
-                                                                    })
+                    # # Write TF Summaries
+                    # summary = sess.run(write_op, feed_dict={input_: np.vstack(np.array(episode_states)),
+                    #                                                 actions: np.vstack(np.array(episode_actions)),
+                    #                                                 discounted_episode_rewards_: discounted_episode_rewards,
+                    #                                                     mean_reward_: mean_reward
+                    #                                                 })
                     
                 
-                    writer.add_summary(summary, episode)
-                    writer.flush()
+                    # writer.add_summary(summary, episode)
+                    # writer.flush()
                     
                 
                     
@@ -180,6 +180,111 @@ max_episodes, learning_rate, gamma, render=False):
                 saver.save(sess, "./models/model.ckpt")
                 print("Model saved")
 
+def predict(env, state_size, action_size, n_episodes=10, render=True):
+
+    ### POLICY ESTIMATOR ###
+    with tf.name_scope("inputs"):
+        input_ = tf.placeholder(tf.float32, [None, state_size], name="input_")
+        actions = tf.placeholder(tf.int32, [None, action_size], name="actions")
+        discounted_episode_rewards_ = tf.placeholder(tf.float32, [None,], name="discounted_episode_rewards")
+        
+        # Add this placeholder for having this variable in tensorboard
+        mean_reward_ = tf.placeholder(tf.float32 , name="mean_reward")
+
+        with tf.name_scope("fc1"):
+            fc1 = tf.contrib.layers.fully_connected(inputs = input_,
+                                                    num_outputs = 10,
+                                                    activation_fn=tf.nn.relu,
+                                                    weights_initializer=tf.contrib.layers.xavier_initializer())
+
+        with tf.name_scope("fc2"):
+            fc2 = tf.contrib.layers.fully_connected(inputs = fc1,
+                                                    num_outputs = action_size,
+                                                    activation_fn= tf.nn.relu,
+                                                    weights_initializer=tf.contrib.layers.xavier_initializer())
+        
+        with tf.name_scope("fc3"):
+            fc3 = tf.contrib.layers.fully_connected(inputs = fc2,
+                                                    num_outputs = action_size,
+                                                    activation_fn= None,
+                                                    weights_initializer=tf.contrib.layers.xavier_initializer())
+
+        with tf.name_scope("softmax"):
+            action_distribution = tf.nn.softmax(fc3)
+
+        with tf.name_scope("loss"):
+            # tf.nn.softmax_cross_entropy_with_logits computes the cross entropy of the result after applying the softmax function
+            # If you have single-class labels, where an object can only belong to one class, you might now consider using 
+            # tf.nn.sparse_softmax_cross_entropy_with_logits so that you don't have to convert your labels to a dense one-hot array. 
+            neg_log_prob = tf.nn.softmax_cross_entropy_with_logits_v2(logits = fc3, labels = actions)
+            loss = tf.reduce_mean(neg_log_prob * discounted_episode_rewards_) 
+            
+        
+        with tf.name_scope("train"):
+            train_opt = tf.train.AdamOptimizer(learning_rate).minimize(loss)
+
+    # tensorboard
+    # Setup TensorBoard Writer
+    # writer = tf.summary.FileWriter("./tensorboard/pg/1")
+
+    ## Losses
+    # tf.summary.scalar("Loss", loss)
+
+    ## Reward mean
+    # tf.summary.scalar("Reward_mean", mean_reward_)
+
+    # write_op = tf.summary.merge_all()
+
+
+    ### TRAINING ###
+    allRewards = []
+    total_rewards = 0
+    maximumRewardRecorded = 0
+    episode = 0
+    episode_states, episode_actions, episode_rewards = [],[],[]
+
+    # saver = tf.train.Saver()
+
+    saver = tf.train.Saver()
+
+    with tf.Session() as sess:
+        env.reset()
+        rewards = []
+        
+        # Load the model
+        saver.restore(sess, "./models/model.ckpt")
+
+        for episode in range(n_episodes):
+            state = env.reset()
+            step = 0
+            done = False
+            total_rewards = 0
+            print("****************************************************")
+            print("EPISODE ", episode)
+
+            while True:
+                
+
+                # Choose action a, remember WE'RE NOT IN A DETERMINISTIC ENVIRONMENT, WE'RE OUTPUT PROBABILITIES.
+                action_probability_distribution = sess.run(action_distribution, feed_dict={input_: state.reshape([1,8])})
+                #print(action_probability_distribution)
+                action = np.random.choice(range(action_probability_distribution.shape[1]), p=action_probability_distribution.ravel())  # select action w.r.t the actions prob
+
+                if render:
+                    env.render()
+
+                new_state, reward, done, info = env.step(action)
+
+                total_rewards += reward
+
+                if done:
+                    rewards.append(total_rewards)
+                    print ("Score", total_rewards)
+                    break
+                state = new_state
+        env.close()
+        print ("Score over time: " +  str(sum(rewards)/10))
+
 if __name__ == "__main__":
     env = gym.make('LunarLander-v2')
     env = env.unwrapped
@@ -190,13 +295,12 @@ if __name__ == "__main__":
     action_size = env.action_space.n
     
     # max episodes for training
-    max_episodes = 500
+    max_episodes = 1000
     learning_rate = 0.01
     # discount rate
     gamma = 0.95
 
-    reinforce(env, state_size, action_size, 
-max_episodes, learning_rate, gamma, render=False)
+    # reinforce(env, state_size, action_size, \
+# max_episodes, learning_rate, gamma, render=False)
 
-
-    # sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+    predict(env, state_size, action_size)
