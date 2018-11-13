@@ -68,7 +68,7 @@ max_episodes, learning_rate, gamma, render=False):
 
     # tensorboard
     # Setup TensorBoard Writer
-    writer = tf.summary.FileWriter("/tensorboard/pg/1")
+    writer = tf.summary.FileWriter("./tensorboard/pg/1")
 
     ## Losses
     tf.summary.scalar("Loss", loss)
@@ -105,7 +105,8 @@ max_episodes, learning_rate, gamma, render=False):
             while True:
                 
                 # Choose action a, remember WE'RE NOT IN A DETERMINISTIC ENVIRONMENT, WE'RE OUTPUT PROBABILITIES.
-                action_probability_distribution = sess.run(action_distribution, feed_dict={input_: state.reshape([1,4])})
+                print(state)
+                action_probability_distribution = sess.run(action_distribution, feed_dict={input_: state.reshape([1,8])})
                 
                 action = np.random.choice(range(action_probability_distribution.shape[1]), p=action_probability_distribution.ravel())  # select action w.r.t the actions prob
 
@@ -181,9 +182,10 @@ max_episodes, learning_rate, gamma, render=False):
 
 if __name__ == "__main__":
     env = gym.make('LunarLander-v2')
+    env = env.unwrapped
 
     # n frames
-    state_size = 4
+    state_size = 8
     # possible actions
     action_size = env.action_space.n
     
