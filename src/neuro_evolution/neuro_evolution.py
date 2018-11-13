@@ -46,7 +46,7 @@ class Agent(object):
         if render:
             self.env.game.render()
 
-        # self.epsilon = 0.1
+        self.epsilon = 1.
         # self.actions = actions
         # self.learning_rate = 0.01
         # self.discount_factor = 0.9
@@ -55,8 +55,9 @@ class Agent(object):
     def reward_sum(self, new_reward):
         self.reward += new_reward
 
-    def reward_reset(self):
+    def reset(self):
         self.reward = 0.
+        self.epsilon = 1.
 
     # def get_initial_states(self):
     #     state = self.env.reset()
@@ -68,7 +69,7 @@ class Agent(object):
     #         action = np.random.choice(self.env.game.action_space)
     #     else:
     #         state_action = self.q_table[state]
-    #         a
+        
 
     # # update q function with sample <s, a, r, s'>
     # def learn(self, state, action, reward, next_state):
@@ -127,7 +128,7 @@ def eval_genomes(genomes, config):
             if i == 0:
                 # print(ship.env.reset())
                 next_state = ship.env.reset()
-                ship.reward_reset()
+                ship.reset()
             else:
                 next_state, next_reward, done, _ = ship.env.game.step(0)
                 reward += next_reward
@@ -140,7 +141,16 @@ def eval_genomes(genomes, config):
 
         while True:
             nnInput = state
+
+            # if ship.epsilon > 0.01:
+                # ship.epsilon -= ship.epsilon/10
+
             # print(nnInput)
+            
+
+            # if np.random.rand() <= ship.epsilon:
+                # action = np.random.choice(range(4))
+            # else:
             output = net.activate(nnInput)
             action = np.argmax(output)
             
