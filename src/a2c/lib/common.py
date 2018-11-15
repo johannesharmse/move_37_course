@@ -7,87 +7,75 @@ import numpy as np
 import ptan
 
 import tensorflow as tf
-# import torch
-# import torch.nn as nn
-
-def conv_fn(input_shape):
-
-    input_layer = tf.placeholder(tf.float32, input_shape, 32)
-    conv1 = tf.layers.conv2d(
-        inputs=input_layer, 
-        filters=32, 
-        kernel_size=[8,8], 
-        strides=4, 
-        activation=tf.nn.relu
-    )
-    conv2 = tf.layers.conv2d(
-        inputs=conv1, 
-        filters=64, 
-        kernel_size=[4,4], 
-        strides=2, 
-        activation=tf.nn.relu
-    )
-
-def policy_fn(input_shape):
-
-    input_layer = tf.placeholder(tf.float32, input_shape, 32)
-    fn1 = tf.layers.fully_connected(
-        inputs=input_layer, 
-        num_outputs= 512,
-        activation_fn=tf.nn.relu
-    )
-    fn2 = tf.layers.fully_connected(
-        inputs=fn1, 
-        num_outputs= 1,
-        activation=None
-    )
-
-def value_fn(input_shape):
-
-    input_layer = tf.placeholder(tf.float32, input_shape, 32)
-    fn1 = tf.layers.fully_connected(
-        inputs=input_layer, 
-        num_outputs= 512,
-        activation_fn=tf.nn.relu
-    )
-    fn2 = tf.layers.fully_connected(
-        inputs=fn1, 
-        num_outputs= 1,
-        activation=None
-    )
 
 class AtariA2C(nn.Module):
     def __init__(self, input_shape, n_actions):
         super(AtariA2C, self).__init__()
         
-        
-            
-        # self.conv = nn.Sequential(
-        #     nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
-        #     nn.ReLU(),
-        #     nn.Conv2d(32, 64, kernel_size=4, stride=2),
-        #     nn.ReLU(),
-        #     nn.Conv2d(64, 64, kernel_size=3, stride=1),
-        #     nn.ReLU()
-        # )
+        g_conv = tf.Graph()
+        with g_conv.as_default():
+            input_layer = tf.placeholder(tf.float32, input_shape, 32)
+            conv1 = tf.layers.conv2d(
+                inputs=input_layer, 
+                filters=32, 
+                kernel_size=[8,8], 
+                strides=4, 
+                activation=tf.nn.relu
+            )
+            conv2 = tf.layers.conv2d(
+                inputs=conv1, 
+                filters=64, 
+                kernel_size=[4,4], 
+                strides=2, 
+                activation=tf.nn.relu
+            )
 
         
 
         conv_out_size = self._get_conv_out(input_shape)
-        self.policy = nn.Sequential(
-            nn.Linear(conv_out_size, 512),
-            nn.ReLU(),
-            nn.Linear(512, n_actions)
-        )
+        
+        g_policy = tf.Graph()
+        with g_policy.as_default():
+            input_layer = tf.placeholder(tf.float32, input_shape, 32)
+            fn1 = tf.layers.fully_connected(
+                inputs=input_layer, 
+                num_outputs= 512,
+                activation_fn=tf.nn.relu
+            )
+            fn2 = tf.layers.fully_connected(
+                inputs=fn1, 
+                num_outputs= 1,
+                activation=None
+            )
+        # self.policy = nn.Sequential(
+        #     nn.Linear(conv_out_size, 512),
+        #     nn.ReLU(),
+        #     nn.Linear(512, n_actions)
+        # )
 
-        self.value = nn.Sequential(
-            nn.Linear(conv_out_size, 512),
-            nn.ReLU(),
-            nn.Linear(512, 1)
-        )
+        g_value = tf.Graph()
+        with g_value.as_default():
+            input_layer = tf.placeholder(tf.float32, input_shape, 32)
+            fn1 = tf.layers.fully_connected(
+                inputs=input_layer, 
+                num_outputs= 512,
+                activation_fn=tf.nn.relu
+            )
+            fn2 = tf.layers.fully_connected(
+                inputs=fn1, 
+                num_outputs= 1,
+                activation=None
+            )
+        # self.value = nn.Sequential(
+        #     nn.Linear(conv_out_size, 512),
+        #     nn.ReLU(),
+        #     nn.Linear(512, 1)
+        # )
 
-    def _get_conv_out(self, shape):
-        o = self.conv(torch.zeros(1, *shape))
+    def _get_conv_out(self, shape, graph_name='g_conv'):
+        with tf.Session(graph=graph_name) as sess:
+            o = sess.run(fn2, feed_dict={'input_layer': np.zeros([1, *shape], tf.float32)})
+        # o = self.conv(torch.zeros(1, *shape))
         return int(np.prod(o.size()))
 
     def forward(self, x):
