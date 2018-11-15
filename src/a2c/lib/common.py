@@ -1,236 +1,167 @@
-# credit https://github.com/colinskow/move37/blob/master/actor_critic/lib/common.py
+# credit https://github.com/MorvanZhou/Reinforcement-learning-with-tensorflow/blob/master/contents/8_Actor_Critic_Advantage/AC_CartPole.py
 
-import os
-import sys
-import time
+"""
+Actor-Critic using TD-error as the Advantage, Reinforcement Learning.
+The cart pole example. Policy is oscillated.
+View more on my tutorial page: https://morvanzhou.github.io/tutorials/
+Using:
+tensorflow 1.0
+gym 0.8.0
+"""
+
 import numpy as np
-import ptan
-
 import tensorflow as tf
+import gym
 
-class AtariA2C():
-    def __init__(self, input_shape, batch_size, n_actions):
-        super(AtariA2C, self).__init__()
-        
-        
+np.random.seed(2)
+tf.set_random_seed(2)  # reproducible
 
-    def _get_conv_out(self, shape, graph, op):
-        with tf.Session(graph=graph) as sess:
-            sess.run(tf.global_variables_initializer())
-            # print([n.name for n in tf.get_default_graph().as_graph_def().node])
-            # print([tensor.name for tensor in tf.get_default_graph().as_graph_def().node])
-            zeros = np.zeros([batch_size, *shape, 1], np.float32)
-            # zeros = tf.convert_to_tensor(zeros, dtype=tf.float32)
-            o = sess.run(op, feed_dict={conv_input_layer: zeros})
-        # o = self.conv(torch.zeros(1, *shape))
-        return o
-        # return int(np.prod(o.size()))
+# Superparameters
+OUTPUT_GRAPH = False
+MAX_EPISODE = 3000
+DISPLAY_REWARD_THRESHOLD = 200  # renders environment if total episode reward is greater then this threshold
+MAX_EP_STEPS = 1000   # maximum time step in one episode
+RENDER = True  # rendering wastes time
+GAMMA = 0.9     # reward discount in TD error
+LR_A = 0.001    # learning rate for actor
+LR_C = 0.01     # learning rate for critic
 
-    def forward(self, x):
-        fx = x.float() / 256
-        conv_out = self.conv(fx).view(fx.size()[0], -1)
-        return self.policy(conv_out), self.value(conv_out)
+env = gym.make('CartPole-v0')
+env.seed(1)  # reproducible
+env = env.unwrapped
+
+N_F = env.observation_space.shape[0]
+N_A = env.action_space.n
 
 
-def unpack_batch(batch, net, last_val_gamma, device='cpu'):
-    """
-    Convert batch into training tensors
-    :param batch:
-    :param net:
-    :return: states variable, actions tensor, reference q values variable
-    """
-    states = []
-    actions = []
-    rewards = []
-    not_done_idx = []
-    last_states = []
-    for idx, exp in enumerate(batch):
-        # unpack states, actions, and rewards into separate lists
-        states.append(np.array(exp.state, copy=False))
-        actions.append(int(exp.action))
-        rewards.append(exp.reward)
-        if exp.last_state is not None:
-            # if the episode has not yet ended, save the index and state prime of the transition
-            not_done_idx.append(idx)
-            last_states.append(np.array(exp.last_state, copy=False))
-    states_v = torch.FloatTensor(states).to(device)
-    actions_t = torch.LongTensor(actions).to(device)
+class Actor(object):
+    def __init__(self, sess, n_features, n_actions, lr=0.001):
+        self.sess = sess
 
-    # handle rewards
-    rewards_np = np.array(rewards, dtype=np.float32)
-    # if at least one transition was non-terminal
-    if not_done_idx:
-        last_states_v = torch.FloatTensor(last_states).to(device)
-        # calculate the values of all the state primes from the net
-        last_vals_v = net(last_states_v)[1]
-        last_vals_np = last_vals_v.data.cpu().numpy()[:, 0]
-        # apply the Bellman equation adding GAMMA * V(s') to the reward for all non-terminal states
-        # terminal states will contain just the reward received
-        rewards_np[not_done_idx] += last_val_gamma * last_vals_np
+        self.s = tf.placeholder(tf.float32, [1, n_features], "state")
+        self.a = tf.placeholder(tf.int32, None, "act")
+        self.td_error = tf.placeholder(tf.float32, None, "td_error")  # TD_error
 
-    # these are the Q(s,a) values we will use to calculate the advantage and value loss
-    q_vals_v = torch.FloatTensor(rewards_np).to(device)
-    return states_v, actions_t, q_vals_v
-
-
-def unpack_batch_continuous(batch, net, last_val_gamma, device="cpu"):
-    """
-    Convert batch into training tensors
-    :param batch:
-    :param net:
-    :return: states variable, actions tensor, reference values variable
-    """
-    states = []
-    actions = []
-    rewards = []
-    not_done_idx = []
-    last_states = []
-    for idx, exp in enumerate(batch):
-        states.append(exp.state)
-        actions.append(exp.action)
-        rewards.append(exp.reward)
-        if exp.last_state is not None:
-            not_done_idx.append(idx)
-            last_states.append(exp.last_state)
-    states_v = ptan.agent.float32_preprocessor(states).to(device)
-    actions_v = torch.FloatTensor(actions).to(device)
-
-    # handle rewards
-    rewards_np = np.array(rewards, dtype=np.float32)
-    if not_done_idx:
-        last_states_v = ptan.agent.float32_preprocessor(last_states).to(device)
-        last_vals_v = net(last_states_v)[2]
-        last_vals_np = last_vals_v.data.cpu().numpy()[:, 0]
-        rewards_np[not_done_idx] += last_val_gamma * last_vals_np
-
-    ref_vals_v = torch.FloatTensor(rewards_np).to(device)
-    return states_v, actions_v, ref_vals_v
-
-
-class RewardTracker:
-    def __init__(self, writer, stop_reward):
-        self.writer = writer
-        self.stop_reward = stop_reward
-
-    def __enter__(self):
-        self.ts = time.time()
-        self.ts_frame = 0
-        self.total_rewards = []
-        self.best_mean_reward = None
-        return self
-
-    def __exit__(self, *args):
-        self.writer.close()
-
-    def reward(self, reward, frame, epsilon=None):
-        self.total_rewards.append(reward)
-        speed = (frame - self.ts_frame) / (time.time() - self.ts)
-        self.ts_frame = frame
-        self.ts = time.time()
-        mean_reward = np.mean(self.total_rewards[-100:])
-        epsilon_str = "" if epsilon is None else ", eps %.2f" % epsilon
-        print("%d: done %d games, mean reward %.3f, speed %.2f f/s%s" % (
-            frame, len(self.total_rewards), mean_reward, speed, epsilon_str
-        ))
-        sys.stdout.flush()
-        if epsilon is not None:
-            self.writer.add_scalar("epsilon", epsilon, frame)
-        self.writer.add_scalar("speed", speed, frame)
-        self.writer.add_scalar("reward_100", mean_reward, frame)
-        self.writer.add_scalar("reward", reward, frame)
-        save_checkpoint = False
-        if self.best_mean_reward is None or self.best_mean_reward < mean_reward:
-            if self.best_mean_reward is not None:
-                print("Best mean reward updated %.3f -> %.3f, model saved" % (self.best_mean_reward, mean_reward))
-            save_checkpoint = True
-            self.best_mean_reward = mean_reward
-        if mean_reward > self.stop_reward:
-            print("Solved in %d frames!" % frame)
-            return True, save_checkpoint
-        return False, save_checkpoint
-
-
-def mkdir(base, name):
-    path = os.path.join(base, name)
-    if not os.path.exists(path):
-        os.makedirs(path)
-    return path
-
-
-if __name__ == "__main__":
-
-    input_shape = [28, 28]
-    batch_size = 10
-    n_actions=8
-
-    g_conv = tf.Graph()
-    with g_conv.as_default():
-        with tf.name_scope("input_layer"):
-            conv_input_layer = tf.placeholder(tf.float32, \
-            [batch_size, input_shape[0], input_shape[1], 1])
-        with tf.name_scope("conv1"):
-            conv_conv1 = tf.layers.conv2d(
-                inputs=conv_input_layer, 
-                filters=32, 
-                kernel_size=[8,8], 
-                strides=4, 
-                activation=tf.nn.relu
-            )
-        with tf.name_scope("conv2"):
-            conv_conv2 = tf.layers.conv2d(
-                inputs=conv_conv1, 
-                filters=64, 
-                kernel_size=[4,4], 
-                strides=2, 
-                activation=tf.nn.relu
+        with tf.variable_scope('Actor'):
+            l1 = tf.layers.dense(
+                inputs=self.s,
+                units=20,    # number of hidden units
+                activation=tf.nn.relu,
+                kernel_initializer=tf.random_normal_initializer(0., .1),    # weights
+                bias_initializer=tf.constant_initializer(0.1),  # biases
+                name='l1'
             )
 
-    # conv_out_size = self._get_conv_out(input_shape)
+            self.acts_prob = tf.layers.dense(
+                inputs=l1,
+                units=n_actions,    # output units
+                activation=tf.nn.softmax,   # get action probabilities
+                kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+                bias_initializer=tf.constant_initializer(0.1),  # biases
+                name='acts_prob'
+            )
 
-    g_policy = tf.Graph()
-    with g_policy.as_default():
-        with tf.name_scope("input_layer"):
-            policy_input_layer = tf.placeholder(tf.float32, input_shape)
-        with tf.name_scope("fn1"):
-            policy_fn1 = tf.contrib.layers.fully_connected(
-                inputs=policy_input_layer, 
-                num_outputs= 512,
-                activation_fn=tf.nn.relu
-            )
-        with tf.name_scope("fn2"):
-            policy_fn2 = tf.contrib.layers.fully_connected(
-                inputs=policy_fn1, 
-                num_outputs= 1,
-                activation_fn=None
-            )
-    # self.policy = nn.Sequential(
-    #     nn.Linear(conv_out_size, 512),
-    #     nn.ReLU(),
-    #     nn.Linear(512, n_actions)
-    # )
+        with tf.variable_scope('exp_v'):
+            log_prob = tf.log(self.acts_prob[0, self.a])
+            self.exp_v = tf.reduce_mean(log_prob * self.td_error)  # advantage (TD_error) guided loss
 
-    g_value = tf.Graph()
-    with g_value.as_default():
-        with tf.name_scope("input_layer"):
-            value_input_layer = tf.placeholder(tf.float32, input_shape)
-        with tf.name_scope("fn1"):
-            value_fn1 = tf.contrib.layers.fully_connected(
-                inputs=value_input_layer, 
-                num_outputs= 512,
-                activation_fn=tf.nn.relu
-            )
-        with tf.name_scope("fn2"):
-            value_fn2 = tf.contrib.layers.fully_connected(
-                inputs=value_fn1, 
-                num_outputs= 1,
-                activation_fn=None
-            )
-    # self.value = nn.Sequential(
-    #     nn.Linear(conv_out_size, 512),
-    #     nn.ReLU(),
-    #     nn.Linear(512, 1)
-    # )
+        with tf.variable_scope('train'):
+            self.train_op = tf.train.AdamOptimizer(lr).minimize(-self.exp_v)  # minimize(-exp_v) = maximize(exp_v)
 
-    test = AtariA2C(input_shape=[28, 28], batch_size=10, n_actions=8)
-    test._get_conv_out(shape=[28,28], graph=g_conv, op=conv_conv2)
-    print('yay')
+    def learn(self, s, a, td):
+        s = s[np.newaxis, :]
+        feed_dict = {self.s: s, self.a: a, self.td_error: td}
+        _, exp_v = self.sess.run([self.train_op, self.exp_v], feed_dict)
+        return exp_v
+
+    def choose_action(self, s):
+        s = s[np.newaxis, :]
+        probs = self.sess.run(self.acts_prob, {self.s: s})   # get probabilities for all actions
+        return np.random.choice(np.arange(probs.shape[1]), p=probs.ravel())   # return a int
+
+
+class Critic(object):
+    def __init__(self, sess, n_features, lr=0.01):
+        self.sess = sess
+
+        self.s = tf.placeholder(tf.float32, [1, n_features], "state")
+        self.v_ = tf.placeholder(tf.float32, [1, 1], "v_next")
+        self.r = tf.placeholder(tf.float32, None, 'r')
+
+        with tf.variable_scope('Critic'):
+            l1 = tf.layers.dense(
+                inputs=self.s,
+                units=20,  # number of hidden units
+                activation=tf.nn.relu,  # None
+                # have to be linear to make sure the convergence of actor.
+                # But linear approximator seems hardly learns the correct Q.
+                kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+                bias_initializer=tf.constant_initializer(0.1),  # biases
+                name='l1'
+            )
+
+            self.v = tf.layers.dense(
+                inputs=l1,
+                units=1,  # output units
+                activation=None,
+                kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+                bias_initializer=tf.constant_initializer(0.1),  # biases
+                name='V'
+            )
+
+        with tf.variable_scope('squared_TD_error'):
+            self.td_error = self.r + GAMMA * self.v_ - self.v
+            self.loss = tf.square(self.td_error)    # TD_error = (r+gamma*V_next) - V_eval
+        with tf.variable_scope('train'):
+            self.train_op = tf.train.AdamOptimizer(lr).minimize(self.loss)
+
+    def learn(self, s, r, s_):
+        s, s_ = s[np.newaxis, :], s_[np.newaxis, :]
+
+        v_ = self.sess.run(self.v, {self.s: s_})
+        td_error, _ = self.sess.run([self.td_error, self.train_op],
+                                          {self.s: s, self.v_: v_, self.r: r})
+        return td_error
+
+
+sess = tf.Session()
+
+actor = Actor(sess, n_features=N_F, n_actions=N_A, lr=LR_A)
+critic = Critic(sess, n_features=N_F, lr=LR_C)     # we need a good teacher, so the teacher should learn faster than the actor
+
+sess.run(tf.global_variables_initializer())
+
+if OUTPUT_GRAPH:
+    tf.summary.FileWriter("logs/", sess.graph)
+
+for i_episode in range(MAX_EPISODE):
+    s = env.reset()
+    t = 0
+    track_r = []
+    while True:
+        if RENDER: env.render()
+
+        a = actor.choose_action(s)
+
+        s_, r, done, info = env.step(a)
+
+        if done: r = -20
+
+        track_r.append(r)
+
+        td_error = critic.learn(s, r, s_)  # gradient = grad[r + gamma * V(s_) - V(s)]
+        actor.learn(s, a, td_error)     # true_gradient = grad[logPi(s,a) * td_error]
+
+        s = s_
+        t += 1
+
+        if done or t >= MAX_EP_STEPS:
+            ep_rs_sum = sum(track_r)
+
+            if 'running_reward' not in globals():
+                running_reward = ep_rs_sum
+            else:
+                running_reward = running_reward * 0.95 + ep_rs_sum * 0.05
+            if running_reward > DISPLAY_REWARD_THRESHOLD: RENDER = True  # rendering
+            print("episode:", i_episode, "  reward:", int(running_reward))
+            break
