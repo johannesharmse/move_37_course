@@ -8,75 +8,23 @@ import ptan
 
 import tensorflow as tf
 
-class AtariA2C(nn.Module):
-    def __init__(self, input_shape, n_actions):
+class AtariA2C():
+    def __init__(self, input_shape, batch_size, n_actions):
         super(AtariA2C, self).__init__()
         
-        g_conv = tf.Graph()
-        with g_conv.as_default():
-            input_layer = tf.placeholder(tf.float32, input_shape, 32)
-            conv1 = tf.layers.conv2d(
-                inputs=input_layer, 
-                filters=32, 
-                kernel_size=[8,8], 
-                strides=4, 
-                activation=tf.nn.relu
-            )
-            conv2 = tf.layers.conv2d(
-                inputs=conv1, 
-                filters=64, 
-                kernel_size=[4,4], 
-                strides=2, 
-                activation=tf.nn.relu
-            )
-
         
 
-        conv_out_size = self._get_conv_out(input_shape)
-        
-        g_policy = tf.Graph()
-        with g_policy.as_default():
-            input_layer = tf.placeholder(tf.float32, input_shape, 32)
-            fn1 = tf.layers.fully_connected(
-                inputs=input_layer, 
-                num_outputs= 512,
-                activation_fn=tf.nn.relu
-            )
-            fn2 = tf.layers.fully_connected(
-                inputs=fn1, 
-                num_outputs= 1,
-                activation=None
-            )
-        # self.policy = nn.Sequential(
-        #     nn.Linear(conv_out_size, 512),
-        #     nn.ReLU(),
-        #     nn.Linear(512, n_actions)
-        # )
-
-        g_value = tf.Graph()
-        with g_value.as_default():
-            input_layer = tf.placeholder(tf.float32, input_shape, 32)
-            fn1 = tf.layers.fully_connected(
-                inputs=input_layer, 
-                num_outputs= 512,
-                activation_fn=tf.nn.relu
-            )
-            fn2 = tf.layers.fully_connected(
-                inputs=fn1, 
-                num_outputs= 1,
-                activation=None
-            )
-        # self.value = nn.Sequential(
-        #     nn.Linear(conv_out_size, 512),
-        #     nn.ReLU(),
-        #     nn.Linear(512, 1)
-        # )
-
-    def _get_conv_out(self, shape, graph_name='g_conv'):
-        with tf.Session(graph=graph_name) as sess:
-            o = sess.run(fn2, feed_dict={'input_layer': np.zeros([1, *shape], tf.float32)})
+    def _get_conv_out(self, shape, graph, op):
+        with tf.Session(graph=graph) as sess:
+            sess.run(tf.global_variables_initializer())
+            # print([n.name for n in tf.get_default_graph().as_graph_def().node])
+            # print([tensor.name for tensor in tf.get_default_graph().as_graph_def().node])
+            zeros = np.zeros([batch_size, *shape, 1], np.float32)
+            # zeros = tf.convert_to_tensor(zeros, dtype=tf.float32)
+            o = sess.run(op, feed_dict={conv_input_layer: zeros})
         # o = self.conv(torch.zeros(1, *shape))
-        return int(np.prod(o.size()))
+        return o
+        # return int(np.prod(o.size()))
 
     def forward(self, x):
         fx = x.float() / 256
@@ -207,3 +155,82 @@ def mkdir(base, name):
     if not os.path.exists(path):
         os.makedirs(path)
     return path
+
+
+if __name__ == "__main__":
+
+    input_shape = [28, 28]
+    batch_size = 10
+    n_actions=8
+
+    g_conv = tf.Graph()
+    with g_conv.as_default():
+        with tf.name_scope("input_layer"):
+            conv_input_layer = tf.placeholder(tf.float32, \
+            [batch_size, input_shape[0], input_shape[1], 1])
+        with tf.name_scope("conv1"):
+            conv_conv1 = tf.layers.conv2d(
+                inputs=conv_input_layer, 
+                filters=32, 
+                kernel_size=[8,8], 
+                strides=4, 
+                activation=tf.nn.relu
+            )
+        with tf.name_scope("conv2"):
+            conv_conv2 = tf.layers.conv2d(
+                inputs=conv_conv1, 
+                filters=64, 
+                kernel_size=[4,4], 
+                strides=2, 
+                activation=tf.nn.relu
+            )
+
+    # conv_out_size = self._get_conv_out(input_shape)
+
+    g_policy = tf.Graph()
+    with g_policy.as_default():
+        with tf.name_scope("input_layer"):
+            policy_input_layer = tf.placeholder(tf.float32, input_shape)
+        with tf.name_scope("fn1"):
+            policy_fn1 = tf.contrib.layers.fully_connected(
+                inputs=policy_input_layer, 
+                num_outputs= 512,
+                activation_fn=tf.nn.relu
+            )
+        with tf.name_scope("fn2"):
+            policy_fn2 = tf.contrib.layers.fully_connected(
+                inputs=policy_fn1, 
+                num_outputs= 1,
+                activation_fn=None
+            )
+    # self.policy = nn.Sequential(
+    #     nn.Linear(conv_out_size, 512),
+    #     nn.ReLU(),
+    #     nn.Linear(512, n_actions)
+    # )
+
+    g_value = tf.Graph()
+    with g_value.as_default():
+        with tf.name_scope("input_layer"):
+            value_input_layer = tf.placeholder(tf.float32, input_shape)
+        with tf.name_scope("fn1"):
+            value_fn1 = tf.contrib.layers.fully_connected(
+                inputs=value_input_layer, 
+                num_outputs= 512,
+                activation_fn=tf.nn.relu
+            )
+        with tf.name_scope("fn2"):
+            value_fn2 = tf.contrib.layers.fully_connected(
+                inputs=value_fn1, 
+                num_outputs= 1,
+                activation_fn=None
+            )
+    # self.value = nn.Sequential(
+    #     nn.Linear(conv_out_size, 512),
+    #     nn.ReLU(),
+    #     nn.Linear(512, 1)
+    # )
+
+    test = AtariA2C(input_shape=[28, 28], batch_size=10, n_actions=8)
+    test._get_conv_out(shape=[28,28], graph=g_conv, op=conv_conv2)
+    print('yay')
