@@ -21,7 +21,7 @@ OUTPUT_GRAPH = False
 MAX_EPISODE = 3000
 DISPLAY_REWARD_THRESHOLD = 200  # renders environment if total episode reward is greater then this threshold
 MAX_EP_STEPS = 1000   # maximum time step in one episode
-RENDER = True  # rendering wastes time
+RENDER = False  # rendering wastes time
 GAMMA = 0.9     # reward discount in TD error
 LR_A = 0.001    # learning rate for actor
 LR_C = 0.01     # learning rate for critic
@@ -35,13 +35,19 @@ N_A = env.action_space.n
 
 
 class Actor(object):
+    """
+    Actor. This component is responsible for the 
+    action the agent should take next.
+    """
     def __init__(self, sess, n_features, n_actions, lr=0.001):
-        self.sess = sess
+        self.sess = sess # actor and critic use the same session, but trained seperately
 
-        self.s = tf.placeholder(tf.float32, [1, n_features], "state")
-        self.a = tf.placeholder(tf.int32, None, "act")
-        self.td_error = tf.placeholder(tf.float32, None, "td_error")  # TD_error
+        self.s = tf.placeholder(tf.float32, [1, n_features], "state") # state. can be pixels or whatevs defines the state
+        self.a = tf.placeholder(tf.int32, None, "act") # action to take
+        self.td_error = tf.placeholder(tf.float32, None, "td_error")  # TD_error. same as advantage. Positive is good, negative is bad.
 
+        # actor branch of neural net
+        # 2 dense layers
         with tf.variable_scope('Actor'):
             l1 = tf.layers.dense(
                 inputs=self.s,
@@ -60,7 +66,19 @@ class Actor(object):
                 bias_initializer=tf.constant_initializer(0.1),  # biases
                 name='acts_prob'
             )
-
+        
+        # expected value based on the action to take
+        # we want to maximise the expexted value
+        # it has two components - log of the recommended action probability (always negative)
+        # and the advantage (postive or negative)
+        # with the actor, we essentially just want to correct the action probabilities. not the advantage (critic)
+        # thus increase the probabilities that give us large advantage, decrease probabilities of 
+        # actions that have large negative advantage.
+        # 
+        # more extreme action probabilities should correlate with lower td_error (expected value).
+        # this means if we have an extreme probability and an extreme td_error
+        # we have a lot to learn... however, if we have extreme probabilities and low td_errror, 
+        # it's chilled because that's what we expected and thus can't change much (already extreme). 
         with tf.variable_scope('exp_v'):
             log_prob = tf.log(self.acts_prob[0, self.a])
             self.exp_v = tf.reduce_mean(log_prob * self.td_error)  # advantage (TD_error) guided loss
@@ -164,4 +182,7 @@ for i_episode in range(MAX_EPISODE):
                 running_reward = running_reward * 0.95 + ep_rs_sum * 0.05
             if running_reward > DISPLAY_REWARD_THRESHOLD: RENDER = True  # rendering
             print("episode:", i_episode, "  reward:", int(running_reward))
+            # print('Log Prob:' + str(a))
+            print('Advatnage:' + str(td_error))
+            # print('Value:' + str(actor.exp_v))
             break
