@@ -87,25 +87,41 @@ class Actor(object):
             self.train_op = tf.train.AdamOptimizer(lr).minimize(-self.exp_v)  # minimize(-exp_v) = maximize(exp_v)
 
     def learn(self, s, a, td):
+        """
+        Update weights based on loss function.
+        Return advantage guided (dependent on log prob of action) loss
+        if interested
+        """
         s = s[np.newaxis, :]
         feed_dict = {self.s: s, self.a: a, self.td_error: td}
         _, exp_v = self.sess.run([self.train_op, self.exp_v], feed_dict)
         return exp_v
 
     def choose_action(self, s):
+        """"
+        Choose action based on assigned 
+        action probabilities
+        """
         s = s[np.newaxis, :]
         probs = self.sess.run(self.acts_prob, {self.s: s})   # get probabilities for all actions
         return np.random.choice(np.arange(probs.shape[1]), p=probs.ravel())   # return a int
 
 
 class Critic(object):
+    """
+    Critic. Responsible for correctly 
+    predicting the value of a state.
+    """
     def __init__(self, sess, n_features, lr=0.01):
-        self.sess = sess
+        self.sess = sess # actor and critic use the same session, but trained seperately
 
-        self.s = tf.placeholder(tf.float32, [1, n_features], "state")
-        self.v_ = tf.placeholder(tf.float32, [1, 1], "v_next")
-        self.r = tf.placeholder(tf.float32, None, 'r')
+        self.s = tf.placeholder(tf.float32, [1, n_features], "state") # state. can be pixels or whatevs defines the state
+        self.v_ = tf.placeholder(tf.float32, [1, 1], "v_next") #value of next state (used in Bellman equation)
+        self.r = tf.placeholder(tf.float32, None, 'r') # reward of current state (used in Bellman equation)
 
+        # critic branch of neural net
+        # 1 dense layer
+        # linear output
         with tf.variable_scope('Critic'):
             l1 = tf.layers.dense(
                 inputs=self.s,
@@ -127,6 +143,11 @@ class Critic(object):
                 name='V'
             )
 
+        # we want to get TD error as close to zero as possible
+        # large positive TD error means that it went unexpectedly well
+        # large negative TD error means it went unexpectedly bad
+        # by getting it as close to zero as possible, we increase 
+        # our knowledge around the value of a state
         with tf.variable_scope('squared_TD_error'):
             self.td_error = self.r + GAMMA * self.v_ - self.v
             self.loss = tf.square(self.td_error)    # TD_error = (r+gamma*V_next) - V_eval
@@ -134,6 +155,10 @@ class Critic(object):
             self.train_op = tf.train.AdamOptimizer(lr).minimize(self.loss)
 
     def learn(self, s, r, s_):
+        """
+        Update weights based on loss function
+        Return TD Error of interested
+        """
         s, s_ = s[np.newaxis, :], s_[np.newaxis, :]
 
         v_ = self.sess.run(self.v, {self.s: s_})
@@ -147,42 +172,64 @@ sess = tf.Session()
 actor = Actor(sess, n_features=N_F, n_actions=N_A, lr=LR_A)
 critic = Critic(sess, n_features=N_F, lr=LR_C)     # we need a good teacher, so the teacher should learn faster than the actor
 
+# init variablles
 sess.run(tf.global_variables_initializer())
 
+# define log path
 if OUTPUT_GRAPH:
     tf.summary.FileWriter("logs/", sess.graph)
 
+# loop through episodes
 for i_episode in range(MAX_EPISODE):
+    # init env and start state
     s = env.reset()
+    # step count
     t = 0
+    # episode rewards tracker
     track_r = []
-    while True:
-        if RENDER: env.render()
 
+    while True:
+
+        # render
+        if RENDER: env.render()
+        
+        # choose action
         a = actor.choose_action(s)
 
+        # perform action. get next state and reward
         s_, r, done, info = env.step(a)
 
+        # dying is bad
         if done: r = -20
-
+        
+        # keep track of rewards
         track_r.append(r)
 
+        # train - update critic and actor weights
         td_error = critic.learn(s, r, s_)  # gradient = grad[r + gamma * V(s_) - V(s)]
         actor.learn(s, a, td_error)     # true_gradient = grad[logPi(s,a) * td_error]
 
+        # init next state
         s = s_
+
+        # step count
         t += 1
 
+        # if episode is done or we won
         if done or t >= MAX_EP_STEPS:
+
+            # calculate total episode rewards
             ep_rs_sum = sum(track_r)
 
+            # calculated weighted average episode reward
             if 'running_reward' not in globals():
                 running_reward = ep_rs_sum
             else:
                 running_reward = running_reward * 0.95 + ep_rs_sum * 0.05
+            
+            # worth showing?
             if running_reward > DISPLAY_REWARD_THRESHOLD: RENDER = True  # rendering
+            
             print("episode:", i_episode, "  reward:", int(running_reward))
-            # print('Log Prob:' + str(a))
-            print('Advatnage:' + str(td_error))
-            # print('Value:' + str(actor.exp_v))
+            
             break
